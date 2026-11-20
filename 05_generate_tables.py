@@ -1,0 +1,30 @@
+import common as c
+import artifact_helpers as h
+c.setup(c.args().root)
+a=c.readj(c.DATA/'analytic/annual.json');de=c.readj(c.DATA/'analytic/decomposition.json')
+t1=[];t2=[];t3=[]
+for cat in c.PRIMARY+['Other clams']+c.REFERENCE:
+ rr=[r for r in a if r['category']==cat];ok=[str(r['year']) for r in rr if r['status']=='IDENTIFIED'];note='2018 market-size sales D; endpoints only' if cat=='Manila clams' else '2013 market-size sales D' if cat=='Mussels' else 'Market-size sales D in all years; residual group' if cat=='Other clams' else '2023 code 12 wording Eastern/Gulf Coast' if cat=='Eastern oysters' else 'Commercial category; three observed censuses'
+ t1.append(dict(Category=cat,Role=c.role(cat),Form_code=c.CODES[cat],Farms_2013=int(rr[0]['all_size_farms']),Farms_2018=int(rr[1]['all_size_farms']),Farms_2023=int(rr[2]['all_size_farms']),Matched_market_years=', '.join(ok) if ok else 'None',Classification_and_availability=note))
+for cat in c.PRIMARY+c.REFERENCE:
+ for r in [z for z in a if z['category']==cat]:t2.append(dict(Category=cat,Census_year=r['year'],Market_sales_million_nominal_USD=None if r['V_nominal_1000_USD'] is None else r['V_nominal_1000_USD']/1000,Market_live_weight_million_lb=r['Q_live_weight_1000_lb']/1000,Market_sales_million_2023_USD=None if r['V_1000_2023_USD'] is None else r['V_1000_2023_USD']/1000,Market_unit_value_2023_USD_per_lb=r['P_2023_USD_per_lb'],Sales_raw_status=r['V_raw'] if r['status']!='IDENTIFIED' else 'Published',Source_file=r['source_file'],PDF_page=1,Printed_page=10))
+selected=[('Hard clams',2013,2023),('Manila clams',2013,2023),('Geoducks',2013,2023),('Geoducks',2018,2023),('Pacific oysters',2013,2023)]
+for cat,y0,y1 in selected:
+ r=next(z for z in de if (z['category'],z['from_year'],z['to_year'],z['basis'])==(cat,y0,y1,'2023 USD'));cq,cu=r['quantity_component_1000_USD'],r['unit_value_component_1000_USD']
+ t3.append(dict(Category=cat,Period=f'{y0}-{y1}',Real_sales_change_million_2023_USD=r['delta_V_1000_USD']/1000,Quantity_component_million_2023_USD=cq/1000,Unit_value_component_million_2023_USD=cu/1000,Component_directions=('Q + / UV +' if cq>0 and cu>0 else 'Q + / UV -' if cq>0 else 'Q - / UV +')))
+titles=['Census coverage, commercial category definitions, and reporting farm numbers in U.S. clam aquaculture, 2013-2023','Market-size sales value, live weight, and inflation-adjusted average unit value across clam and reference shellfish categories','Decomposition of changes in inflation-adjusted market-size sales value into quantity and unit-value components']
+notes=["Source: USDA Census of Aquaculture, Table 7, printed p. 10 (2013, 2018, 2023); clam farms independently checked against Table 19. Farm counts cover all sizes and may overlap across categories; do not sum to a unique farm total. Matched years require public market-size V and Q. D denotes disclosure suppression. Commercial labels do not establish exclusive, unchanged biological species. Eastern and Pacific oysters and mussels are industry references, not causal controls.","Source: USDA Table 7, printed p. 10; BLS CUUR0000SA0 annual average CPI-U. Sales and live weight both cover food/market-size sales. Values are not total aquaculture production. D retains the official confidential value; NA means derived value unavailable. Constant 2023 USD uses all-items CPI-U, not an industry price index. Unit value is matching published V/Q, not a quality-adjusted price. Display rounding does not enter calculations.","All amounts are million 2023 USD. Quantity = (Q1-Q0)(P0+P1)/2; unit value = (P1-P0)(Q0+Q1)/2; sum equals real sales change before display rounding. Q is market-size live weight and P is matching CPI-U-adjusted V/Q. Components are arithmetic, not causal effects. Selected decade comparisons plus the prespecified recent geoduck contrast; complete prespecified periods and both monetary bases are in Table S2. Eastern oyster and mussel comparisons are retained in S2. Components displayed to three decimals may not sum exactly at display precision."]
+docpaths=[]
+for i,(rows,title,note) in enumerate(zip([t1,t2,t3],titles,notes),1):
+ out=c.TABLES/f'Table_{i}';out.mkdir(parents=True,exist_ok=True);c.csvout(out/f'Table{i}_Source_Data.csv',rows);h.excel(out/f'Table{i}_FINAL.xlsx',[(f'Table {i}',rows)],f'Table {i}. '+title,note)
+ d=h.document(True);d.add_paragraph(f'Table {i}',style='Title');d.add_paragraph(title)
+ if i==1:
+  headers=['Commercial category','Role','Code','Farms\n2013','Farms\n2018','Farms\n2023','Matched V/Q\nyears','Definition and availability'];vals=[[r['Category'],r['Role'],r['Form_code'],r['Farms_2013'],r['Farms_2018'],r['Farms_2023'],r['Matched_market_years'],r['Classification_and_availability']] for r in rows];widths=[1.25,1.12,.4,.54,.54,.54,1.35,4.05]
+ elif i==2:
+  headers=['Commercial category','Census','Sales\nmillion USD','Live weight\nmillion lb','Real sales\nmillion 2023 USD','Real unit value\n2023 USD/lb'];vals=[[r['Category'],r['Census_year'],c.display(r['Market_sales_million_nominal_USD']) if r['Market_sales_million_nominal_USD'] is not None else 'D',c.display(r['Market_live_weight_million_lb']),c.display(r['Market_sales_million_2023_USD']),c.display(r['Market_unit_value_2023_USD_per_lb'])] for r in rows];widths=[1.65,.6,1.75,1.65,2.25,1.99]
+ else:
+  headers=['Commercial category','Period','Real sales\nchange','Quantity\ncomponent','Unit-value\ncomponent','Directions'];vals=[[r['Category'],r['Period'],c.display(r['Real_sales_change_million_2023_USD']),c.display(r['Quantity_component_million_2023_USD']),c.display(r['Unit_value_component_million_2023_USD']),r['Component_directions']] for r in rows];widths=[1.7,1.05,1.9,1.85,1.85,1.44]
+ h.table(d,headers,vals,widths);d.add_paragraph(note);path=out/f'Table{i}_FINAL.docx';h.save_doc(d,path);docpaths.append(path);c.textout(out/f'Table{i}_Caption.md',f'Table {i}. {title}\n\n{note}\n')
+h.convert_documents(docpaths)
+for p in docpaths:h.render_pdf(p.with_suffix('.pdf'),c.QC/'visual_review'/p.stem)
+print('Generated three editable main tables, source CSVs and rendered PDF previews')
